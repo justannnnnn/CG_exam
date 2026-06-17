@@ -930,19 +930,68 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
-function shoot()
+function shoot(e)
 {
     if (broken) return;
 
-    const forward = vec3Normalize([
-        cameraTarget[0] - cameraPos[0],
-        cameraTarget[1] - cameraPos[1],
-        cameraTarget[2] - cameraPos[2]
+    const rect = canvas.getBoundingClientRect();
+
+    const mouseX =
+        ((e.clientX - rect.left) / rect.width) * 2 - 1;
+
+    const mouseY =
+        -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    const proj =
+        mat4Perspective(
+            Math.PI / 3,
+            canvas.width / canvas.height,
+            0.1,
+            100
+        );
+
+    const view =
+        mat4LookAt(
+            cameraPos,
+            cameraTarget,
+            cameraUp
+        );
+
+    const invVP =
+        mat4Inverse(mat4Multiply(proj, view));
+
+    const near = [mouseX, mouseY, -1, 1];
+    const far  = [mouseX, mouseY,  1, 1];
+
+    const unproject = (v) =>
+    {
+        const x = v[0], y = v[1], z = v[2], w = v[3];
+
+        const ix =
+            invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12]*w;
+        const iy =
+            invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13]*w;
+        const iz =
+            invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14]*w;
+        const iw =
+            invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15]*w;
+
+        return [ix/iw, iy/iw, iz/iw];
+    };
+
+    const p0 = unproject(near);
+    const p1 = unproject(far);
+
+    const ro = cameraPos;
+    const rd = vec3Normalize([
+        p1[0]-p0[0],
+        p1[1]-p0[1],
+        p1[2]-p0[2]
     ]);
 
-    // считаем общий AABB всех стенок
-    let min = [ Infinity, Infinity, Infinity ];
-    let max = [ -Infinity, -Infinity, -Infinity ];
+    // --- общий AABB ящика
+    let min = [Infinity, Infinity, Infinity];
+    let max = [-Infinity, -Infinity, -Infinity];
 
     for (const part of box)
     {
@@ -965,15 +1014,72 @@ function shoot()
         }
     }
 
-    if (rayAABB(cameraPos, forward, min, max))
+    if (rayAABB(ro, rd, min, max))
     {
         destroyBox();
     }
 }
 
+function mat4Inverse(m)
+{
+    const inv = new Float32Array(16);
+
+    const a = m;
+
+    inv[0] =
+        a[5]*a[10]*a[15] -
+        a[5]*a[11]*a[14] -
+        a[9]*a[6]*a[15] +
+        a[9]*a[7]*a[14] +
+        a[13]*a[6]*a[11] -
+        a[13]*a[7]*a[10];
+
+    inv[4] =
+        -a[4]*a[10]*a[15] +
+        a[4]*a[11]*a[14] +
+        a[8]*a[6]*a[15] -
+        a[8]*a[7]*a[14] -
+        a[12]*a[6]*a[11] +
+        a[12]*a[7]*a[10];
+
+    inv[8] =
+        a[4]*a[9]*a[15] -
+        a[4]*a[11]*a[13] -
+        a[8]*a[5]*a[15] +
+        a[8]*a[7]*a[13] +
+        a[12]*a[5]*a[11] -
+        a[12]*a[7]*a[9];
+
+    inv[12] =
+        -a[4]*a[9]*a[14] +
+        a[4]*a[10]*a[13] +
+        a[8]*a[5]*a[14] -
+        a[8]*a[6]*a[13] -
+        a[12]*a[5]*a[10] +
+        a[12]*a[6]*a[9];
+
+    inv[1] = -a[1]*a[10]*a[15] + a[1]*a[11]*a[14] + a[9]*a[2]*a[15] - a[9]*a[3]*a[14] - a[13]*a[2]*a[11] + a[13]*a[3]*a[10];
+    inv[5] =  a[0]*a[10]*a[15] - a[0]*a[11]*a[14] - a[8]*a[2]*a[15] + a[8]*a[3]*a[14] + a[12]*a[2]*a[11] - a[12]*a[3]*a[10];
+    inv[9] = -a[0]*a[9]*a[15] + a[0]*a[11]*a[13] + a[8]*a[1]*a[15] - a[8]*a[3]*a[13] - a[12]*a[1]*a[11] + a[12]*a[3]*a[9];
+    inv[13] = a[0]*a[9]*a[14] - a[0]*a[10]*a[13] - a[8]*a[1]*a[14] + a[8]*a[2]*a[13] + a[12]*a[1]*a[10] - a[12]*a[2]*a[9];
+
+    inv[2] = a[1]*a[6]*a[15] - a[1]*a[7]*a[14] - a[5]*a[2]*a[15] + a[5]*a[3]*a[14] + a[13]*a[2]*a[7] - a[13]*a[3]*a[6];
+    inv[6] = -a[0]*a[6]*a[15] + a[0]*a[7]*a[14] + a[4]*a[2]*a[15] - a[4]*a[3]*a[14] - a[12]*a[2]*a[7] + a[12]*a[3]*a[6];
+    inv[10] = a[0]*a[5]*a[15] - a[0]*a[7]*a[13] - a[4]*a[1]*a[15] + a[4]*a[3]*a[13] + a[12]*a[1]*a[7] - a[12]*a[3]*a[5];
+    inv[14] = -a[0]*a[5]*a[14] + a[0]*a[6]*a[13] + a[4]*a[1]*a[14] - a[4]*a[2]*a[13] - a[12]*a[1]*a[6] + a[12]*a[2]*a[5];
+
+    inv[3] = -a[1]*a[6]*a[11] + a[1]*a[7]*a[10] + a[5]*a[2]*a[11] - a[5]*a[3]*a[10] - a[9]*a[2]*a[7] + a[9]*a[3]*a[6];
+    inv[7] = a[0]*a[6]*a[11] - a[0]*a[7]*a[10] - a[4]*a[2]*a[11] + a[4]*a[3]*a[10] + a[8]*a[2]*a[7] - a[8]*a[3]*a[6];
+    inv[11] = -a[0]*a[5]*a[11] + a[0]*a[7]*a[9] + a[4]*a[1]*a[11] - a[4]*a[3]*a[9] - a[8]*a[1]*a[7] + a[8]*a[3]*a[5];
+    inv[15] = a[0]*a[5]*a[10] - a[0]*a[6]*a[9] - a[4]*a[1]*a[10] + a[4]*a[2]*a[9] + a[8]*a[1]*a[6] - a[8]*a[2]*a[5];
+
+    return inv;
+}
+
 window.addEventListener("keydown", (e) => {
-  if (e.code === "Space") shoot();
   if (e.code === "KeyR") resetScene();
 });
 
-window.addEventListener("mousedown", shoot);
+window.addEventListener("mousedown", (e) => {
+    shoot(e);
+});
