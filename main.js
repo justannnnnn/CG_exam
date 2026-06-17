@@ -364,6 +364,114 @@ const cubeVertices = new Float32Array([
   -0.5,-0.5, 0.5,   0,-1,0,  0,1
 
 ]);
+
+function createShardVertices()
+{
+    const depth = 0.05;
+
+    const points = [
+
+        [-0.55,-0.45],
+        [ 0.45,-0.50],
+        [ 0.60,-0.10],
+        [ 0.20, 0.55],
+        [-0.40, 0.25]
+
+    ];
+
+    for(const p of points)
+    {
+        p[0] += (Math.random()-0.5)*0.35;
+        p[1] += (Math.random()-0.5)*0.35;
+    }
+
+    const v = [];
+
+    function pushVertex(x,y,z,nx,ny,nz,u,vv)
+    {
+        v.push(
+            x,y,z,
+            nx,ny,nz,
+            u,vv
+        );
+    }
+
+    function addTri(a,b,c,nx,ny,nz)
+    {
+        pushVertex(a[0],a[1],a[2],nx,ny,nz,0,0);
+        pushVertex(b[0],b[1],b[2],nx,ny,nz,1,0);
+        pushVertex(c[0],c[1],c[2],nx,ny,nz,0.5,1);
+    }
+
+    //
+    // Передняя грань
+    //
+
+    const front = points.map(
+        p => [p[0], p[1], depth]
+    );
+
+    addTri(front[0],front[1],front[2],0,0,1);
+    addTri(front[0],front[2],front[3],0,0,1);
+    addTri(front[0],front[3],front[4],0,0,1);
+
+    //
+    // Задняя грань
+    //
+
+    const back = points.map(
+        p => [p[0], p[1], -depth]
+    );
+
+    addTri(back[2],back[1],back[0],0,0,-1);
+    addTri(back[3],back[2],back[0],0,0,-1);
+    addTri(back[4],back[3],back[0],0,0,-1);
+
+    //
+    // Боковые грани
+    //
+
+    for(let i=0;i<points.length;i++)
+    {
+        const next =
+            (i+1)%points.length;
+
+        const f1 = front[i];
+        const f2 = front[next];
+
+        const b1 = back[i];
+        const b2 = back[next];
+
+        const ex = f2[0]-f1[0];
+        const ey = f2[1]-f1[1];
+
+        let nx = ey;
+        let ny = -ex;
+
+        const len =
+            Math.hypot(nx,ny);
+
+        nx /= len;
+        ny /= len;
+
+        addTri(
+            f1,
+            f2,
+            b2,
+            nx,ny,0
+        );
+
+        addTri(
+            f1,
+            b2,
+            b1,
+            nx,ny,0
+        );
+    }
+
+    return new Float32Array(v);
+}
+
 const cubeBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuffer);
 gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
@@ -533,7 +641,7 @@ function destroyBox()
 
     fragments = [];
 
-    for (let i = 0; i < 24; i++)
+    for (let i = 0; i < 20; i++)
     {
         fragments.push(
 
@@ -558,20 +666,63 @@ function update(dt) {
     p.pos[0] += p.vel[0] * dt;
     p.pos[1] += p.vel[1] * dt;
     p.pos[2] += p.vel[2] * dt;
+    p.vel[0] *= 0.999;
+    p.vel[1] *= 0.999;
+    p.vel[2] *= 0.999;
 
     p.rot[0] += p.rotVel[0] * dt;
     p.rot[1] += p.rotVel[1] * dt;
     p.rot[2] += p.rotVel[2] * dt;
+    p.rotVel[0] *= 0.998;
+    p.rotVel[1] *= 0.998;
+    p.rotVel[2] *= 0.998;
 
-    const halfH = p.size[1] * 0.5;
-    if (p.pos[1] - halfH < floorY) {
-      p.pos[1] = floorY + halfH;
-      p.vel[1] *= -0.25;   // слабый отскок
-      p.vel[0] *= 0.96;
-      p.vel[2] *= 0.96;
-      p.rotVel[0] *= 0.98;
-      p.rotVel[1] *= 0.98;
-      p.rotVel[2] *= 0.98;
+   const lowestY =
+    getLowestPoint(p);
+
+    if(lowestY < floorY)
+    {
+        const penetration =
+            floorY - lowestY;
+
+        p.pos[1] += penetration;
+
+        p.vel[1] *= -0.25;
+
+        p.vel[0] *= 0.96;
+        p.vel[2] *= 0.96;
+
+        p.rotVel[0] *= 0.95;
+        p.rotVel[1] *= 0.95;
+        p.rotVel[2] *= 0.95;
+    }
+    const linearSpeed =
+    Math.hypot(
+        p.vel[0],
+        p.vel[1],
+        p.vel[2]
+    );
+
+    const angularSpeed =
+        Math.hypot(
+            p.rotVel[0],
+            p.rotVel[1],
+            p.rotVel[2]
+        );
+
+    if(
+        linearSpeed < 0.05 &&
+        angularSpeed < 0.05 &&
+        lowestY < floorY + 0.02
+    )
+    {
+        p.vel[0] = 0;
+        p.vel[1] = 0;
+        p.vel[2] = 0;
+
+        p.rotVel[0] = 0;
+        p.rotVel[1] = 0;
+        p.rotVel[2] = 0;
     }
   }
 }
@@ -644,7 +795,86 @@ function drawObject(obj, isFragment) {
         uUseTexture,
         obj.useTexture ? 1 : 0
     );
-    gl.drawArrays(gl.TRIANGLES, 0, 36);
+    if(isFragment)
+    {
+        gl.bindBuffer(
+            gl.ARRAY_BUFFER,
+            obj.buffer
+        );
+
+        gl.vertexAttribPointer(
+            aPosition,
+            3,
+            gl.FLOAT,
+            false,
+            stride,
+            0
+        );
+
+        gl.vertexAttribPointer(
+            aNormal,
+            3,
+            gl.FLOAT,
+            false,
+            stride,
+            3 * Float32Array.BYTES_PER_ELEMENT
+        );
+
+        gl.vertexAttribPointer(
+            aTexCoord,
+            2,
+            gl.FLOAT,
+            false,
+            stride,
+            6 * Float32Array.BYTES_PER_ELEMENT
+        );
+
+        gl.drawArrays(
+            gl.TRIANGLES,
+            0,
+            obj.vertexCount
+        );
+    }
+    else
+    {
+        gl.bindBuffer(
+            gl.ARRAY_BUFFER,
+            cubeBuffer
+        );
+
+        gl.vertexAttribPointer(
+            aPosition,
+            3,
+            gl.FLOAT,
+            false,
+            stride,
+            0
+        );
+
+        gl.vertexAttribPointer(
+            aNormal,
+            3,
+            gl.FLOAT,
+            false,
+            stride,
+            3 * Float32Array.BYTES_PER_ELEMENT
+        );
+
+        gl.vertexAttribPointer(
+            aTexCoord,
+            2,
+            gl.FLOAT,
+            false,
+            stride,
+            6 * Float32Array.BYTES_PER_ELEMENT
+        );
+
+        gl.drawArrays(
+            gl.TRIANGLES,
+            0,
+            36
+        );
+    }
 }
 
 function render() {
@@ -675,6 +905,32 @@ function render() {
 
 function makeWoodFragment(pos, wallSize)
 {
+    const mesh = createShardVertices();
+
+    const localVertices = [];
+
+    for(let i=0;i<mesh.length;i+=8)
+    {
+        localVertices.push([
+            mesh[i],
+            mesh[i+1],
+            mesh[i+2]
+        ]);
+    }
+
+    const buffer = gl.createBuffer();
+
+    gl.bindBuffer(
+        gl.ARRAY_BUFFER,
+        buffer
+    );
+
+    gl.bufferData(
+        gl.ARRAY_BUFFER,
+        mesh,
+        gl.STATIC_DRAW
+    );
+
     return {
 
         pos: [
@@ -684,9 +940,9 @@ function makeWoodFragment(pos, wallSize)
         ],
 
         size: [
-            wallSize[0] * (0.3 + Math.random()*0.7), // НЕ трогаем общую ширину сильно
-            wallSize[1] * (0.2 + Math.random()*0.6), // высота варьируется
-            wallSize[2] + 0.02 + Math.random()*0.05   // толщина чуть меняется
+            wallSize[0] * (0.25 + Math.random()*0.4),
+            wallSize[1] * (0.25 + Math.random()*0.4),
+            1.0
         ],
 
         rot: [
@@ -707,8 +963,81 @@ function makeWoodFragment(pos, wallSize)
             (Math.random()-0.5)*10
         ],
 
-        useTexture: true
+        useTexture: true,
+
+        buffer: buffer,
+
+        vertexCount: mesh.length / 8,
+
+        localVertices: localVertices
     };
+}
+
+function rotateVertex(v, rot)
+{
+    let x = v[0];
+    let y = v[1];
+    let z = v[2];
+
+    // X
+
+    let cy = Math.cos(rot[0]);
+    let sy = Math.sin(rot[0]);
+
+    let ny = y * cy - z * sy;
+    let nz = y * sy + z * cy;
+
+    y = ny;
+    z = nz;
+
+    // Y
+
+    let cx = Math.cos(rot[1]);
+    let sx = Math.sin(rot[1]);
+
+    let nx = x * cx + z * sx;
+    nz = -x * sx + z * cx;
+
+    x = nx;
+    z = nz;
+
+    // Z
+
+    let cz = Math.cos(rot[2]);
+    let sz = Math.sin(rot[2]);
+
+    nx = x * cz - y * sz;
+    ny = x * sz + y * cz;
+
+    return [nx, ny, z];
+}
+
+function getLowestPoint(fragment)
+{
+    let minY = Infinity;
+
+    for(const v of fragment.localVertices)
+    {
+        const r =
+            rotateVertex(
+                [
+                    v[0] * fragment.size[0],
+                    v[1] * fragment.size[1],
+                    v[2] * fragment.size[2]
+                ],
+                fragment.rot
+            );
+
+        const worldY =
+            r[1] + fragment.pos[1];
+
+        if(worldY < minY)
+        {
+            minY = worldY;
+        }
+    }
+
+    return minY;
 }
 
 let lastTime = performance.now();
