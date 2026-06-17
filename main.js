@@ -666,63 +666,20 @@ function update(dt) {
     p.pos[0] += p.vel[0] * dt;
     p.pos[1] += p.vel[1] * dt;
     p.pos[2] += p.vel[2] * dt;
-    p.vel[0] *= 0.999;
-    p.vel[1] *= 0.999;
-    p.vel[2] *= 0.999;
 
     p.rot[0] += p.rotVel[0] * dt;
     p.rot[1] += p.rotVel[1] * dt;
     p.rot[2] += p.rotVel[2] * dt;
-    p.rotVel[0] *= 0.998;
-    p.rotVel[1] *= 0.998;
-    p.rotVel[2] *= 0.998;
 
-   const lowestY =
-    getLowestPoint(p);
-
-    if(lowestY < floorY)
-    {
-        const penetration =
-            floorY - lowestY;
-
-        p.pos[1] += penetration;
-
-        p.vel[1] *= -0.25;
-
-        p.vel[0] *= 0.96;
-        p.vel[2] *= 0.96;
-
-        p.rotVel[0] *= 0.95;
-        p.rotVel[1] *= 0.95;
-        p.rotVel[2] *= 0.95;
-    }
-    const linearSpeed =
-    Math.hypot(
-        p.vel[0],
-        p.vel[1],
-        p.vel[2]
-    );
-
-    const angularSpeed =
-        Math.hypot(
-            p.rotVel[0],
-            p.rotVel[1],
-            p.rotVel[2]
-        );
-
-    if(
-        linearSpeed < 0.05 &&
-        angularSpeed < 0.05 &&
-        lowestY < floorY + 0.02
-    )
-    {
-        p.vel[0] = 0;
-        p.vel[1] = 0;
-        p.vel[2] = 0;
-
-        p.rotVel[0] = 0;
-        p.rotVel[1] = 0;
-        p.rotVel[2] = 0;
+    const halfH = p.size[1] * 0.5;
+    if (p.pos[1] - halfH < floorY) {
+      p.pos[1] = floorY + halfH;
+      p.vel[1] *= -0.25;   // слабый отскок
+      p.vel[0] *= 0.96;
+      p.vel[2] *= 0.96;
+      p.rotVel[0] *= 0.98;
+      p.rotVel[1] *= 0.98;
+      p.rotVel[2] *= 0.98;
     }
   }
 }
@@ -884,7 +841,7 @@ function render() {
 
   // Пол
   const floor = {
-    pos: [0, floorY - 0.8, 0],
+    pos: [0, floorY - 0.5, 0],
     size: [20, 1, 20],
     rot: [0, 0, 0],
     color: [0.22, 0.24, 0.27],
@@ -906,17 +863,6 @@ function render() {
 function makeWoodFragment(pos, wallSize)
 {
     const mesh = createShardVertices();
-
-    const localVertices = [];
-
-    for(let i=0;i<mesh.length;i+=8)
-    {
-        localVertices.push([
-            mesh[i],
-            mesh[i+1],
-            mesh[i+2]
-        ]);
-    }
 
     const buffer = gl.createBuffer();
 
@@ -967,77 +913,8 @@ function makeWoodFragment(pos, wallSize)
 
         buffer: buffer,
 
-        vertexCount: mesh.length / 8,
-
-        localVertices: localVertices
+        vertexCount: mesh.length / 8
     };
-}
-
-function rotateVertex(v, rot)
-{
-    let x = v[0];
-    let y = v[1];
-    let z = v[2];
-
-    // X
-
-    let cy = Math.cos(rot[0]);
-    let sy = Math.sin(rot[0]);
-
-    let ny = y * cy - z * sy;
-    let nz = y * sy + z * cy;
-
-    y = ny;
-    z = nz;
-
-    // Y
-
-    let cx = Math.cos(rot[1]);
-    let sx = Math.sin(rot[1]);
-
-    let nx = x * cx + z * sx;
-    nz = -x * sx + z * cx;
-
-    x = nx;
-    z = nz;
-
-    // Z
-
-    let cz = Math.cos(rot[2]);
-    let sz = Math.sin(rot[2]);
-
-    nx = x * cz - y * sz;
-    ny = x * sz + y * cz;
-
-    return [nx, ny, z];
-}
-
-function getLowestPoint(fragment)
-{
-    let minY = Infinity;
-
-    for(const v of fragment.localVertices)
-    {
-        const r =
-            rotateVertex(
-                [
-                    v[0] * fragment.size[0],
-                    v[1] * fragment.size[1],
-                    v[2] * fragment.size[2]
-                ],
-                fragment.rot
-            );
-
-        const worldY =
-            r[1] + fragment.pos[1];
-
-        if(worldY < minY)
-        {
-            minY = worldY;
-        }
-    }
-
-    return minY;
 }
 
 let lastTime = performance.now();
